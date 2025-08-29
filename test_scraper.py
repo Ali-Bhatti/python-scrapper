@@ -13,27 +13,28 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from amazon_review_scraper import AmazonReviewScraper
 
 def test_scraper():
-    """Test the scraper with a sample ASIN"""
+    """Test the scraper with a sample ASIN and URL"""
     print("Testing Amazon Review Scraper...")
     print("=" * 40)
-    
+
     # Test ASIN (Amazon Echo Dot - a popular product with many reviews)
     test_asin = 'B08N5WRWNW'
-    
+    test_url = f"https://www.amazon.com/product-reviews/{test_asin}?pageNumber=1"
+
     try:
         # Initialize scraper
         print("Initializing scraper for US Amazon...")
         scraper = AmazonReviewScraper(region='US')
-        
-        # Test scraping just 1 page
+
+        # Test scraping just 1 page using ASIN
         print(f"Testing with ASIN: {test_asin}")
         print("Scraping 1 page of reviews...")
-        
-        reviews = scraper.scrape_all_reviews(test_asin, max_pages=1)
-        
+
+        reviews = scraper.scrape_all_reviews(asin=test_asin, max_pages=1)
+
         if reviews:
             print(f"✅ Success! Found {len(reviews)} reviews")
-            
+
             # Show sample review data
             if len(reviews) > 0:
                 sample = reviews[0]
@@ -43,17 +44,17 @@ def test_scraper():
                 print(f"  Reviewer: {sample['reviewer']}")
                 print(f"  Verified: {sample['verified_purchase']}")
                 print(f"  Date: {sample['date']}")
-            
+
             # Test export functionality
             print("\nTesting export functionality...")
             csv_file = scraper.export_to_csv(reviews, test_asin, "test_output")
             json_file = scraper.export_to_json(reviews, test_asin, "test_output")
-            
+
             if csv_file and json_file:
                 print("✅ Export test successful!")
                 print(f"  CSV file: {csv_file}")
                 print(f"  JSON file: {json_file}")
-                
+
                 # Clean up test files
                 try:
                     os.remove(csv_file)
@@ -63,14 +64,22 @@ def test_scraper():
                     pass
             else:
                 print("❌ Export test failed")
-                
+
         else:
             print("❌ No reviews found - this might be normal for some products")
-            
+
+        # Test scraping using URL
+        print(f"\nTesting with URL: {test_url}")
+        url_reviews = scraper.scrape_all_reviews(url=test_url, max_pages=1)
+        if url_reviews:
+            print(f"✅ URL scraping returned {len(url_reviews)} reviews")
+        else:
+            print("❌ URL scraping returned no reviews")
+
     except Exception as e:
         print(f"❌ Test failed with error: {e}")
         return False
-    
+
     print("\n" + "=" * 40)
     print("Test completed!")
     return True
