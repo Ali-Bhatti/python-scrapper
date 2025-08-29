@@ -69,7 +69,12 @@ class AmazonReviewScraper:
         if base_url:
             parsed = urlparse(base_url)
             query = parse_qs(parsed.query)
+            # Always set the desired page number
             query['pageNumber'] = [str(page)]
+            # Ensure essential query parameters are present for reliable scraping
+            query.setdefault('reviewerType', ['all_reviews'])
+            query.setdefault('filterByStar', ['all_stars'])
+            query.setdefault('sortBy', ['recent'])
             new_query = urlencode(query, doseq=True)
             parsed = parsed._replace(query=new_query)
             return urlunparse(parsed)
@@ -251,6 +256,14 @@ def main():
     parser.add_argument('--output', '-o', help='Output filename (without extension)')
 
     args = parser.parse_args()
+
+    # Allow passing a full URL as the positional argument
+    if args.asin and args.asin.startswith('http'):
+        if args.url:
+            print("Error: provide either an ASIN or a URL, not both")
+            sys.exit(1)
+        args.url = args.asin
+        args.asin = None
 
     if not args.asin and not args.url:
         print("Error: provide either an ASIN or a URL")
