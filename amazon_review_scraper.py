@@ -13,11 +13,18 @@ import random
 import argparse
 import sys
 from datetime import datetime
-from urllib.parse import urljoin, urlparse
+from urllib.parse import (
+    urljoin,
+    urlparse,
+    parse_qs,
+    urlencode,
+    urlunparse,
+)
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 import pandas as pd
 import os
+import re
 
 class AmazonReviewScraper:
     def __init__(self, region='US'):
@@ -57,12 +64,28 @@ class AmazonReviewScraper:
         
         self.config = self.regions[self.region]
     
-    def get_review_url(self, asin, page=1):
-        """Generate review URL for given ASIN and page number"""
-        base_url = self.config['review_url_template'].format(asin=asin)
+    def get_review_url(self, asin=None, page=1, base_url=None):
+        """Generate review URL for given ASIN or base URL and page number"""
+        if base_url:
+            parsed = urlparse(base_url)
+            query = parse_qs(parsed.query)
+            # Always set the desired page number
+            query['pageNumber'] = [str(page)]
+            # Ensure essential query parameters are present for reliable scraping
+            query.setdefault('reviewerType', ['all_reviews'])
+            query.setdefault('filterByStar', ['all_stars'])
+            query.setdefault('sortBy', ['recent'])
+            new_query = urlencode(query, doseq=True)
+            parsed = parsed._replace(query=new_query)
+            return urlunparse(parsed)
+
+        if asin is None:
+            raise ValueError("ASIN must be provided if base_url is not specified")
+
+        base = self.config['review_url_template'].format(asin=asin)
         if page > 1:
-            return f"{base_url}/ref=cm_cr_arp_d_paging_btm_next_{page}?pageNumber={page}"
-        return base_url
+            return f"{base}/ref=cm_cr_arp_d_paging_btm_next_{page}?pageNumber={page}"
+        return base
     
     def extract_review_data(self, review_element):
         """Extract review data from a single review element"""
@@ -84,7 +107,6 @@ class AmazonReviewScraper:
             if rating_element:
                 rating_text = rating_element.get_text(strip=True)
                 # Extract numeric rating from text like "4.0 out of 5 stars"
-                import re
                 rating_match = re.search(r'(\d+(?:\.\d+)?)', rating_text)
                 if rating_match:
                     rating = rating_match.group(1)
@@ -113,9 +135,9 @@ class AmazonReviewScraper:
             print(f"Error extracting review data: {e}")
             return None
     
-    def scrape_page(self, asin, page=1):
+    def scrape_page(self, asin=None, page=1, base_url=None):
         """Scrape reviews from a single page"""
-        url = self.get_review_url(asin, page)
+        url = self.get_review_url(asin=asin, page=page, base_url=base_url)
         
         try:
             print(f"Scraping page {page}...")
@@ -150,16 +172,20 @@ class AmazonReviewScraper:
             print(f"Unexpected error on page {page}: {e}")
             return [], False
     
-    def scrape_all_reviews(self, asin, max_pages=None):
-        """Scrape all reviews for a given ASIN"""
+    def scrape_all_reviews(self, asin=None, url=None, max_pages=None):
+        """Scrape all reviews for a given ASIN or full review URL"""
+        if not asin and not url:
+            raise ValueError("Either asin or url must be provided")
+
         all_reviews = []
         page = 1
         has_next = True
-        
-        print(f"Starting to scrape reviews for ASIN: {asin} from {self.region} Amazon")
-        
+
+        target = asin if asin else url
+        print(f"Starting to scrape reviews for: {target} from {self.region} Amazon")
+
         while has_next and (max_pages is None or page <= max_pages):
-            reviews, has_next = self.scrape_page(asin, page)
+            reviews, has_next = self.scrape_page(asin=asin, page=page, base_url=url)
             
             if reviews:
                 all_reviews.extend(reviews)
@@ -218,8 +244,9 @@ class AmazonReviewScraper:
             return None
 
 def main():
-    parser = argparse.ArgumentParser(description='Scrape Amazon product reviews by ASIN')
-    parser.add_argument('asin', help='Amazon ASIN (e.g., B08N5WRWNW)')
+    parser = argparse.ArgumentParser(description='Scrape Amazon product reviews by ASIN or URL')
+    parser.add_argument('asin', nargs='?', help='Amazon ASIN (e.g., B08N5WRWNW)')
+    parser.add_argument('--url', help='Full Amazon review page URL')
     parser.add_argument('--region', '-r', default='US', choices=['US', 'UK', 'DE'],
                        help='Amazon region (default: US)')
     parser.add_argument('--max-pages', '-m', type=int, default=None,
@@ -227,23 +254,36 @@ def main():
     parser.add_argument('--format', '-f', choices=['csv', 'json', 'both'], default='both',
                        help='Export format (default: both)')
     parser.add_argument('--output', '-o', help='Output filename (without extension)')
-    
+
     args = parser.parse_args()
-    
-    # Validate ASIN format (basic check)
-    if not args.asin or len(args.asin) < 5:
-        print("Error: Invalid ASIN provided")
+
+    # Allow passing a full URL as the positional argument
+    if args.asin and args.asin.startswith('http'):
+        if args.url:
+            print("Error: provide either an ASIN or a URL, not both")
+            sys.exit(1)
+        args.url = args.asin
+        args.asin = None
+
+    if not args.asin and not args.url:
+        print("Error: provide either an ASIN or a URL")
         sys.exit(1)
-    
+
+    asin = args.asin
+    if args.url and not asin:
+        match = re.search(r'/product-reviews/([A-Z0-9]{5,})', args.url)
+        if match:
+            asin = match.group(1)
+
     try:
         # Initialize scraper
         scraper = AmazonReviewScraper(region=args.region)
-        
+
         # Scrape reviews
-        reviews = scraper.scrape_all_reviews(args.asin, max_pages=args.max_pages)
-        
+        reviews = scraper.scrape_all_reviews(asin=asin, url=args.url, max_pages=args.max_pages)
+
         if not reviews:
-            print("No reviews found for this ASIN")
+            print("No reviews found for this input")
             sys.exit(1)
         
         # Export reviews
@@ -251,17 +291,20 @@ def main():
             csv_filename = None
             if args.output:
                 csv_filename = f"{args.output}.csv"
-            scraper.export_to_csv(reviews, args.asin, csv_filename)
-        
+            scraper.export_to_csv(reviews, asin if asin else 'reviews', csv_filename)
+
         if args.format in ['json', 'both']:
             json_filename = None
             if args.output:
                 json_filename = f"{args.output}.json"
-            scraper.export_to_json(reviews, args.asin, json_filename)
+            scraper.export_to_json(reviews, asin if asin else 'reviews', json_filename)
         
         print(f"\nScraping completed successfully!")
         print(f"Total reviews: {len(reviews)}")
-        print(f"ASIN: {args.asin}")
+        if asin:
+            print(f"ASIN: {asin}")
+        if args.url:
+            print(f"URL: {args.url}")
         print(f"Region: {args.region}")
         
     except KeyboardInterrupt:

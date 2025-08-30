@@ -40,6 +40,10 @@ A lightweight Python script to scrape Amazon product reviews by ASIN and export 
 # Scrape all reviews for a product (US Amazon)
 python amazon_review_scraper.py B08N5WRWNW
 
+# Scrape using a full review URL (either syntax works)
+python amazon_review_scraper.py --url "https://www.amazon.com/product-reviews/B08N5WRWNW?pageNumber=1"
+python amazon_review_scraper.py "https://www.amazon.com/product-reviews/B08N5WRWNW?pageNumber=1"
+
 # Scrape from UK Amazon
 python amazon_review_scraper.py B08N5WRWNW --region UK
 
@@ -68,7 +72,8 @@ python amazon_review_scraper.py B08N5WRWNW --region UK --max-pages 3 --format cs
 
 ### Command Line Options
 
-- `asin`: Amazon ASIN (required)
+- `asin`: Amazon ASIN (or a full review URL)
+- `--url`: Full Amazon review page URL (optional if URL is the first argument)
 - `--region, -r`: Amazon region (US, UK, DE) - default: US
 - `--max-pages, -m`: Maximum pages to scrape - default: all pages
 - `--format, -f`: Export format (csv, json, both) - default: both
